@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Call Center Queue</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f7f6; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 1000px; margin: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        h1 { text-align: center; color: #2c3e50; grid-column: span 2; }
+        h2 { border-bottom: 2px solid #eee; padding-bottom: 10px; margin-top: 0; font-size: 1.2rem;}
+        .queue-list { min-height: 150px; }
+        .caller-item { background: #e3f2fd; padding: 10px; margin-bottom: 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;}
+        .agent-item { background: #f1f8e9; padding: 10px; margin-bottom: 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center;}
+        .busy { background: #ffebee; }
+        button { cursor: pointer; padding: 5px 10px; border: none; border-radius: 4px; background: #3498db; color: white; font-weight: bold;}
+        button:hover { background: #2980b9; }
+        input, select { width: 100%; padding: 8px; margin: 5px 0 15px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;}
+        .stats { grid-column: span 2; display: flex; justify-content: space-around; background: #2c3e50; color: white; padding: 15px; border-radius: 8px; }
+        .stat-box { text-align: center; }
+        .stat-number { font-size: 1.5rem; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>📞 Call Center Queue System</h1>
+
+        <div class="card">
+            <h2>Waiting Queue (FIFO)</h2>
+            <div id="queue-list" class="queue-list">Loading...</div>
+        </div>
+
+        <div class="card">
+            <h2>Agents</h2>
+            <div id="agents-list">Loading...</div>
+        </div>
+
+        <div class="card">
+            <h2>Join the Queue</h2>
+            <input type="text" id="name" placeholder="Your Name">
+            <input type="text" id="phone" placeholder="Phone Number">
+            <select id="issue">
+                <option value="BILLING">Billing</option>
+                <option value="TECHNICAL">Technical Support</option>
+                <option value="GENERAL">General Inquiry</option>
+                <option value="COMPLAINT">Complaint</option>
+            </select>
+            <button onclick="joinQueue()" style="width: 100%; padding: 10px;">Call Now</button>
+        </div>
+
+        <div class="card">
+            <h2>System Stats</h2>
+            <div id="stats-display">Loading stats...</div>
+        </div>
+    </div>
+
+    <script>
+        // Fetch data every 2 seconds
+        setInterval(updateDashboard, 2000);
+        updateDashboard();
+
+        function updateDashboard() {
+            // 1. Get State (Queue + Agents)
+            fetch('/api/state')
+                .then(res => res.json())
+                .then(data => {
+                    renderQueue(data.queue);
+                    renderAgents(data.agents);
+                });
+
+            // 2. Get Stats
+            fetch('/api/stats')
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('stats-display').innerHTML = `
+                        <p>Callers Waiting: <b>${data.waiting}</b></p>
+                        <p>Total Served: <b>${data.served}</b></p>
+                        <p>Available Agents: <b>${data.availableAgents}</b></p>
+                    `;
+                });
+        }
+
+        function renderQueue(queue) {
+            const container = document.getElementById('queue-list');
+            if (queue.length === 0) {
+                container.innerHTML = '<p>No callers waiting.</p>';
+                return;
+            }
+            container.innerHTML = queue.map((caller, index) => `
+                <div class="caller-item">
+                    <span><b>${index + 1}.</b> ${caller.name} (${caller.issueType})</span>
+                    <span style="font-size: 0.8rem; color: #666;">ID: ${caller.id}</span>
+                </div>
+            `).join('');
+        }
+
+        function renderAgents(agents) {
+            const container = document.getElementById('agents-list');
+            container.innerHTML = agents.map(agent => `
+                <div class="agent-item ${agent.status === 'BUSY' ? 'busy' : ''}">
+                    <span><b>${agent.name}</b> - ${agent.status}</span>
+                    ${agent.status === 'AVAILABLE' 
+                        ? `<button onclick="agentTakeCall('${agent.id}')">Take Call</button>` 
+                        : `<button onclick="agentEndCall('${agent.id}')" style="background:#e74c3c;">End Call</button>`}
+                </div>
+            `).join('');
+        }
+
+        function joinQueue() {
+            const name = document.getElementById('name').value;
+            const phone = document.getElementById('phone').value;
+            const issueType = document.getElementById('issue').value;
+
+            if (!name || !phone) {
+                alert("Please enter a name and phone number.");
+                return;
+            }
+
+            fetch('/api/callers', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, phone, issueType })
+            }).then(() => {
+                document.getElementById('name').value = '';
+                document.getElementById('phone').value = '';
+                updateDashboard();
+            });
+        }
+
+        function agentTakeCall(agentId) {
+            fetch(`/api/agents/${agentId}/next`, { method: 'POST' })
+                .then(() => updateDashboard());
+        }
+
+        function agentEndCall(agentId) {
+            fetch(`/api/agents/${agentId}/end`, { method: 'POST' })
+                .then(() => updateDashboard());
+        }
+    </script>
+</body>
+</html>
